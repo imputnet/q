@@ -1,7 +1,6 @@
 use anyhow::Result;
 use std::fs::{self, File};
 use std::io;
-use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use tempfile::NamedTempFile;
 
@@ -33,12 +32,24 @@ pub(crate) fn copy_to_new_inode(src: &Path, dst: &Path) -> Result<()> {
 /// Copy `src` to `dst`. When `src` has other hard links, `dst` takes over
 /// that inode so the links stay intact, and `src` gets a private copy.
 pub(crate) fn copy_keeping_hard_links(src: &Path, dst: &Path) -> Result<()> {
-    if fs::metadata(src)?.nlink() > 1 {
+    if hard_link_count(src)? > 1 {
         let _ = fs::remove_file(dst);
         fs::hard_link(src, dst)?;
         return copy_to_new_inode(src, src);
     }
     copy_to_new_inode(src, dst)
+}
+
+#[cfg(unix)]
+fn hard_link_count(path: &Path) -> io::Result<u64> {
+    use std::os::unix::fs::MetadataExt;
+    Ok(fs::metadata(path)?.nlink())
+}
+
+/// Windows has no stable way to count links, so files are treated as unlinked.
+#[cfg(not(unix))]
+fn hard_link_count(_path: &Path) -> io::Result<u64> {
+    Ok(1)
 }
 
 pub(crate) fn copy_preserving_times(src: &Path, dst: &Path) -> Result<()> {

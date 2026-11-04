@@ -132,8 +132,22 @@ fn create_relative_symlink(target: &Path, link: &Path) -> Result<()> {
         }
         relative
     };
-    std::os::unix::fs::symlink(&target, link)
-        .with_context(|| format!("failed to create symlink {}", link.display()))
+    symlink(&target, link).with_context(|| format!("failed to create symlink {}", link.display()))
+}
+
+#[cfg(unix)]
+fn symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+#[cfg(windows)]
+fn symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    let resolved = link.parent().unwrap_or(Path::new(".")).join(target);
+    if resolved.is_dir() {
+        std::os::windows::fs::symlink_dir(target, link)
+    } else {
+        std::os::windows::fs::symlink_file(target, link)
+    }
 }
 
 fn normalize_lexically(path: &Path) -> PathBuf {

@@ -4,10 +4,8 @@ use anyhow::{Context, Result, bail};
 use std::env;
 use std::ffi::OsString;
 use std::fmt;
-use std::fs::File;
-use std::os::fd::{FromRawFd, RawFd};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 pub(crate) struct CommandSpec {
     pub(crate) name: &'static str,
@@ -330,15 +328,14 @@ fn pager_command() -> Option<String> {
 
 /// Run `run` with stdout redirected into `pager`. If the pipe can't be set
 /// up, run unpaged.
+#[cfg(unix)]
 fn run_with_pager(pager: &str, run: impl FnOnce() -> Result<()>) -> Result<()> {
-    let mut fds: [RawFd; 2] = [-1, -1];
-    // SAFETY: `fds` is a valid two-element buffer for pipe(2).
-    if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
+    use std::os::fd::AsRawFd;
+    use std::process::Stdio;
+
+    let Ok((reader, writer)) = std::io::pipe() else {
         return run();
-    }
-    let [read_end, write_end] = fds;
-    // SAFETY: `read_end` is a fresh descriptor we own; File takes ownership.
-    let stdin = unsafe { File::from_raw_fd(read_end) };
+    };
     let less = env::var("LESS")
         .ok()
         .filter(|value| !value.is_empty())
@@ -346,7 +343,7 @@ fn run_with_pager(pager: &str, run: impl FnOnce() -> Result<()>) -> Result<()> {
     let mut child = Command::new("sh")
         .arg("-c")
         .arg(pager)
-        .stdin(Stdio::from(stdin))
+        .stdin(Stdio::from(reader))
         .env("LESS", less)
         .spawn()
         .with_context(|| format!("failed to start pager {pager}"))?;
@@ -356,9 +353,8 @@ fn run_with_pager(pager: &str, run: impl FnOnce() -> Result<()>) -> Result<()> {
     // SAFETY: dup(2) on stdout, which is open; the result is checked.
     let saved = unsafe { libc::dup(stdout_fd) };
     // SAFETY: both descriptors are open; the result is checked.
-    let redirected = saved >= 0 && unsafe { libc::dup2(write_end, stdout_fd) } >= 0;
-    // SAFETY: we own `write_end`; stdout now holds the pipe if needed.
-    unsafe { libc::close(write_end) };
+    let redirected = saved >= 0 && unsafe { libc::dup2(writer.as_raw_fd(), stdout_fd) } >= 0;
+    drop(writer);
     if !redirected {
         if saved >= 0 {
             // SAFETY: `saved` is our own duplicate and is not used again.
@@ -380,6 +376,11 @@ fn run_with_pager(pager: &str, run: impl FnOnce() -> Result<()>) -> Result<()> {
         bail!("pager failed");
     }
     result
+}
+
+#[cfg(not(unix))]
+fn run_with_pager(_pager: &str, run: impl FnOnce() -> Result<()>) -> Result<()> {
+    run()
 }
 
 /// Which quiltrc to load, from `--quiltrc`.
