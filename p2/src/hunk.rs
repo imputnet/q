@@ -29,19 +29,24 @@ pub(crate) fn hunk_fuzz_limit(hunk: &Hunk) -> usize {
     prefix.max(suffix)
 }
 
-/// GNU patch reports fuzz for asymmetric context even when nothing was dropped.
+/// The fuzz GNU patch reports for a hunk with uneven context
+/// (`locate_hunk` in GNU patch). Less trailing than leading context means the
+/// hunk belongs at the end of the file; less leading context means it belongs
+/// at the start, but only if it claims to start at line 1. Matching anywhere
+/// else counts the difference as fuzz.
 pub(crate) fn estimate_fuzz(
     prefix_context: usize,
     suffix_context: usize,
-    requested_line: usize,
-    applied_line: usize,
+    claims_start: bool,
+    at_start: bool,
+    at_end: bool,
 ) -> usize {
     if prefix_context == 0 || suffix_context == 0 {
         return 0;
     }
-    if prefix_context > suffix_context {
+    if prefix_context > suffix_context && !at_end {
         prefix_context - suffix_context
-    } else if prefix_context < suffix_context && requested_line != applied_line {
+    } else if prefix_context < suffix_context && claims_start && !at_start {
         suffix_context - prefix_context
     } else {
         0

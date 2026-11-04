@@ -625,6 +625,8 @@ fn apply_hunks_with_search(
         };
 
         let start = matched.start;
+        let at_start = start == 0;
+        let at_end = start + matched.expected_len == output.len();
         let replacement_len = matched.replacement.len();
         output.splice(
             start..start.saturating_add(matched.expected_len),
@@ -640,8 +642,9 @@ fn apply_hunks_with_search(
         let fuzz = matched.fuzz.max(estimate_fuzz(
             matched.prefix_context,
             matched.suffix_context,
-            requested_line,
-            applied_line,
+            old_start <= 1,
+            at_start,
+            at_end,
         ));
         hunk_reports.push(hunk_report(
             index,
@@ -696,23 +699,29 @@ fn ordered_apply_supported(patch: &FilePatch, options: &ApplyOptions) -> bool {
         && !patch.hunks.is_empty()
 }
 
+/// `delta` is how many lines earlier hunks added, to report lines in the
+/// patched file like GNU patch; `len` is the length of the file `matched`
+/// indexes into.
 fn ordered_hunk_report(
     index: usize,
     matched: &OrderedMatch,
     old_start: usize,
     requested_line: usize,
+    delta: isize,
+    len: usize,
 ) -> HunkReport {
-    let reported_line = matched.start + 1 - matched.prefix_stripped.min(matched.start);
+    let line = matched.start + 1 - matched.prefix_stripped.min(matched.start);
     let applied_line = if old_start == 0 {
         requested_line
     } else {
-        reported_line
+        usize::try_from(line as isize + delta).unwrap_or(line)
     };
     let fuzz = matched.fuzz.max(estimate_fuzz(
         matched.prefix_context,
         matched.suffix_context,
-        requested_line,
-        applied_line,
+        old_start <= 1,
+        matched.start == 0,
+        matched.end == len,
     ));
     hunk_report(
         index,
@@ -769,6 +778,8 @@ pub(crate) fn apply_ordered_hunks_fast<'a>(
             &matched,
             old_start,
             requested_line,
+            delta,
+            original.len(),
         ));
         delta += matched.replacement_len as isize - (matched.end - matched.start) as isize;
 
@@ -822,7 +833,14 @@ fn apply_ordered_hunks_in_place(
             return None;
         }
         let matched = match_ordered_hunk(hunk, reverse, output, start, options.max_fuzz)?;
-        hunk_reports.push(ordered_hunk_report(index, &matched, old_start, start + 1));
+        hunk_reports.push(ordered_hunk_report(
+            index,
+            &matched,
+            old_start,
+            start + 1,
+            0,
+            output.len(),
+        ));
 
         let replacement = matched
             .fuzzed_replacement

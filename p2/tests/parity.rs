@@ -2130,3 +2130,43 @@ fn no_newline_markers_apply_like_gnu_patch() {
         &["f"],
     );
 }
+
+/// Compares the `Hunk #` lines of `--verbose` output, which show where each
+/// hunk applied and with what offset and fuzz.
+fn assert_verbose_output_matches_gnu_patch(name: &str, file: &str, patch: &str) {
+    let root = tempdir(name);
+    let mut outputs = Vec::new();
+    for (side, binary) in [("gnu", reference_patch()), ("p2", patch_under_test())] {
+        let dir = root.join(side);
+        fs::create_dir(&dir).unwrap();
+        fs::write(dir.join("f"), file).unwrap();
+        let output = run_patch(&binary, &dir, patch, &["-p1", "--verbose"]);
+        let hunks: Vec<String> = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter(|line| line.starts_with("Hunk #"))
+            .map(str::to_string)
+            .collect();
+        outputs.push(hunks);
+    }
+    assert_eq!(outputs[0], outputs[1]);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn hunks_after_added_lines_report_no_offset_like_gnu_patch() {
+    let file: String = (1..=20).map(|n| format!("{n}\n")).collect();
+    assert_verbose_output_matches_gnu_patch(
+        "report-after-added-lines",
+        &file,
+        "--- a/f\n+++ b/f\n@@ -2,3 +2,4 @@\n 2\n+2b\n 3\n 4\n@@ -15,3 +16,3 @@\n 15\n-16\n+16b\n 17\n",
+    );
+}
+
+#[test]
+fn short_trailing_context_at_end_of_file_reports_no_fuzz_like_gnu_patch() {
+    assert_verbose_output_matches_gnu_patch(
+        "report-eof-context",
+        "1\n2\n3\n4\n5\n",
+        "--- a/f\n+++ b/f\n@@ -1,5 +1,5 @@\n 1\n 2\n 3\n-4\n+four\n 5\n",
+    );
+}
