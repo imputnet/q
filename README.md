@@ -5,12 +5,27 @@ It has the same commands and works on the same patches and `.pc/` state, so you
 can switch between q and quilt in the same tree. Common stack operations run
 between 5 and 85 times faster than quilt.
 
-To install q, along with `quilt` and `guards` binaries for use as a drop-in
-replacement:
+Binaries for x86_64 Linux, arm64 macOS and x86_64 Windows are published daily
+when main changes. On Linux:
 
 ```sh
-cargo install --path .
+curl -fLo ~/.local/bin/q https://github.com/dumbmoron/q/releases/latest/download/q-x86_64-linux
+chmod +x ~/.local/bin/q
 ```
+
+On macOS, use `q-arm64-macos` instead. On Windows, download
+[`q-x86_64-windows.exe`](https://github.com/dumbmoron/q/releases/latest/download/q-x86_64-windows.exe);
+q runs `diff` and `patch`, so it needs them on `PATH`, for example from Git for
+Windows.
+
+With a Rust toolchain, you can build the latest commit instead:
+
+```sh
+cargo install --git https://github.com/dumbmoron/q --bin q
+```
+
+To use q in place of quilt, symlink `quilt` to it, or add `--bin quilt` to the
+`cargo install` command.
 
 ## Speed
 

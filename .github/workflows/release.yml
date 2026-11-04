@@ -1,0 +1,127 @@
+name: Release
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  check:
+    name: Check for changes
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.check.outputs.release }}
+      sha: ${{ steps.check.outputs.sha }}
+      tag: ${{ steps.check.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Compare main with the latest release
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse HEAD)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "tag=$(date -u +%Y%m%d)-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+          latest=$(gh release view --json tagName --jq .tagName 2>/dev/null || true)
+          if [ -n "$latest" ] && [ "$(git rev-parse -q --verify "$latest^{commit}" || true)" = "$sha" ]; then
+            echo "main is still at $latest; nothing to release"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          ci=$(gh run list --workflow ci.yml --commit "$sha" --json status,conclusion \
+            --jq '[.[] | select(.status == "completed")][0].conclusion // ""')
+          if [ "$ci" != "success" ]; then
+            echo "CI has not passed on $sha (status: ${ci:-none}); skipping"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "release=true" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: check
+    if: needs.check.outputs.release == 'true'
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - name: x86_64-linux
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            exe: q
+          - name: arm64-macos
+            runner: macos-latest
+            target: aarch64-apple-darwin
+            exe: q
+          - name: x86_64-windows
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            exe: q.exe
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.check.outputs.sha }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          cargo build --release --locked --target ${{ matrix.target }} --bin q
+          mkdir dist
+          asset=q-${{ matrix.name }}${{ runner.os == 'Windows' && '.exe' || '' }}
+          cp "target/${{ matrix.target }}/release/${{ matrix.exe }}" "dist/$asset"
+          "dist/$asset" --version
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: q-${{ matrix.name }}
+          path: dist/*
+
+  release:
+    name: Publish
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.check.outputs.tag }}
+          SHA: ${{ needs.check.outputs.sha }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" dist/* --draft --target "$SHA" --title "$TAG" \
+            --notes "Built from $SHA."
+          gh release edit "$TAG" --draft=false --latest
