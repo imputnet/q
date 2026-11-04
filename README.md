@@ -11,6 +11,7 @@ when main changes. On Linux:
 ```sh
 curl -fLo ~/.local/bin/q https://github.com/dumbmoron/q/releases/latest/download/q-x86_64-linux
 chmod +x ~/.local/bin/q
+ln -sf ~/.local/bin/{q,quilt}
 ```
 
 On macOS, use `q-arm64-macos` instead. On Windows, download
