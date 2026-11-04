@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup CI
+        uses: ./.github/actions/setup-ci
+        with: { rust-components: "rustfmt, clippy" }
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Check
+        run: cargo check --all-targets --all-features
+
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Test
+        run: cargo test --all-features
+
+  q-tests-against-upstream-quilt:
+    name: q tests against upstream quilt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup CI
+        uses: ./.github/actions/setup-ci
+        with: { apt-packages: "diffstat graphviz quilt" }
+
+      - name: Run q compatibility tests with upstream quilt
+        run: tools/run-compat-tests.sh /usr/bin/quilt
+
+  upstream-tests-against-q:
+    name: upstream quilt tests against q
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup CI
+        uses: ./.github/actions/setup-ci
+        with: { apt-packages: "diffstat graphviz perl" }
+
+      - name: Clone upstream quilt tests
+        uses: ./.github/actions/clone-upstream-quilt
+        with: { path: "~/quilt" }
+
+      - name: Run upstream quilt tests with q
+        run: |
+          export QUILT_SRC="$HOME/quilt"
+          export VERBOSE_FAILURES=1
+          tools/run-upstream-tests.sh

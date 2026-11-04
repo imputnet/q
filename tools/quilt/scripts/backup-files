@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+set -e
+
+prefix=
+action=
+silent=
+keep=
+touch_after=
+nolinks=
+file_list=
+
+say() {
+	[ -n "$silent" ] || printf '%s\n' "$*"
+}
+
+ensure_nolinks() {
+	local file=$1 tmp
+	[ -e "$file" ] || return 0
+	if [ "$(stat -c %h "$file")" -gt 1 ]; then
+		tmp=$(mktemp "$file.XXXXXX")
+		cp -p "$file" "$tmp"
+		mv "$tmp" "$file"
+	fi
+}
+
+backup_one() {
+	local file=$1 backup=$prefix$file
+	mkdir -p "$(dirname "$backup")"
+	if [ -L "$file" ]; then
+		say "Copying $file"
+		ln -s "$(readlink "$file")" "$backup"
+	elif [ -e "$file" ]; then
+		say "Copying $file"
+		if [ -n "$nolinks" ]; then
+			ln "$file" "$backup" 2>/dev/null || cp -p "$file" "$backup"
+			ensure_nolinks "$file"
+		else
+			ln "$file" "$backup" 2>/dev/null || cp -p "$file" "$backup"
+		fi
+	else
+		say "New file $file"
+		: > "$backup"
+	fi
+}
+
+copy_one() {
+	local file=$1 backup=$prefix$file
+	mkdir -p "$(dirname "$backup")"
+	if [ -L "$file" ]; then
+		say "Copying $file"
+		ln -s "$(readlink "$file")" "$backup"
+	elif [ -e "$file" ]; then
+		say "Copying $file"
+		cp -p "$file" "$backup"
+	else
+		say "New file $file"
+		: > "$backup"
+	fi
+}
+
+restore_one() {
+	local file=$1 backup=$prefix$file
+	[ -e "$backup" ] || [ -L "$backup" ] || return 1
+	if [ -L "$backup" ]; then
+		say "Restoring $file"
+		rm -f "$file"
+		mkdir -p "$(dirname "$file")"
+		ln -s "$(readlink "$backup")" "$file"
+	elif [ -s "$backup" ]; then
+		say "Restoring $file"
+		rm -f "$file"
+		mkdir -p "$(dirname "$file")"
+		ln "$backup" "$file" 2>/dev/null || cp -p "$backup" "$file"
+		[ -z "$touch_after" ] || touch "$file"
+	else
+		say "Removing $file"
+		rm -f "$file"
+	fi
+	if [ -z "$keep" ]; then
+		rm -f "$backup"
+		rmdir -p "$(dirname "$backup")" 2>/dev/null || true
+	fi
+}
+
+list_from_backup() {
+	[ -d "$prefix" ] || return 0
+	(cd "$prefix" && find . \( -type f -o -type l \) -print | sed 's#^\./##')
+}
+
+read_files() {
+	if [ -n "$file_list" ]; then
+		if [ "$file_list" = - ]; then
+			cat
+		else
+			cat "$file_list"
+		fi
+	elif [ "$#" -eq 1 ] && [ "$1" = - ]; then
+		list_from_backup
+	else
+		printf '%s\n' "$@"
+	fi
+}
+
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+	-B) prefix=$2; shift 2 ;;
+	-b|-r|-c|-L)
+		if [ "$1" = -L ] && [ -n "$action" ]; then
+			nolinks=1
+		else
+			action=$1
+		fi
+		shift ;;
+	-s) silent=1; shift ;;
+	-k) keep=1; shift ;;
+	-t) touch_after=1; shift ;;
+	-f) file_list=$2; shift 2 ;;
+	--) shift; break ;;
+	*) break ;;
+	esac
+done
+
+[ -n "$prefix" ] || { echo "backup-files: -B prefix required" >&2; exit 1; }
+
+while IFS= read -r file; do
+	[ -n "$file" ] || continue
+	case "$action" in
+	-b) backup_one "$file" ;;
+	-c) copy_one "$file" ;;
+	-r) restore_one "$file" ;;
+	-L) ensure_nolinks "$file" ;;
+	*) echo "backup-files: action required" >&2; exit 1 ;;
+	esac
+done < <(read_files "$@")

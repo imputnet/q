@@ -1,0 +1,21 @@
+name: Clone Upstream Quilt
+description: Clone upstream quilt from Savannah.
+
+inputs:
+  path:
+    description: Destination path for the upstream quilt checkout.
+    required: false
+    default: ~/quilt
+
+runs:
+  using: composite
+  steps:
+    - name: Clone upstream quilt
+      shell: bash
+      run: |
+        set -euo pipefail
+        dest="${{ inputs.path }}"
+        dest="${dest/#\~/$HOME}"
+        rm -rf "$dest"
+        mkdir -p "$(dirname "$dest")"
+        git clone --depth 1 https://git.savannah.nongnu.org/git/quilt.git "$dest"

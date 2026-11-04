@@ -1,0 +1,12 @@
+mod apply;
+pub mod cli;
+mod color;
+mod commands;
+mod completion;
+mod config;
+mod diff;
+mod expected;
+mod fsutil;
+mod patchfile;
+mod state;
+mod terminal;

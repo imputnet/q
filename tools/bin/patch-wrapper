@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+set -o pipefail
+
+patch_file=
+strip=
+silent=
+backup_prefix=
+patch_args=()
+
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+	-s|--silent|--quiet)
+		silent=1
+		patch_args+=("$1")
+		shift ;;
+	-p*)
+		if [ "$1" = "-p" ]; then
+			strip=$2
+			patch_args+=("-p$2")
+			shift 2
+		else
+			strip=${1#-p}
+			patch_args+=("$1")
+			shift
+		fi ;;
+	-i|--input)
+		patch_file=$2
+		shift 2 ;;
+	--backup)
+		patch_args+=("--backup")
+		shift ;;
+	-B|--prefix)
+		backup_prefix=$2
+		patch_args+=("-B" "$2")
+		shift 2 ;;
+	*)
+		patch_args+=("$1")
+		shift ;;
+	esac
+done
+
+if [ -z "$patch_file" ] && [ -e /proc/self/fd/0 ]; then
+	patch_file=$(readlink /proc/self/fd/0)
+	case "$patch_file" in
+		pipe:*|/dev/*) patch_file= ;;
+	esac
+fi
+patch_file=${patch_file#$PWD/}
+
+if [ -z "$patch_file" ] || [ ! -e "$patch_file" ] || [ -z "$strip" ]; then
+	exec patch "${patch_args[@]}"
+fi
+
+quilt_patches=${QUILT_PATCHES:-patches}
+quilt_pc=${QUILT_PC:-.pc}
+name=${patch_file#/}
+mkdir -p "$quilt_patches/$(dirname "$name")" "$quilt_pc/$name"
+
+if [ ! -e "$quilt_patches/$name" ]; then
+	ln -s "$(realpath --relative-to="$(dirname "$quilt_patches/$name")" "$patch_file")" "$quilt_patches/$name" 2>/dev/null || cp "$patch_file" "$quilt_patches/$name"
+fi
+
+if [ "$strip" = 1 ]; then
+	printf '%s\n' "$name" >> "$quilt_patches/series"
+else
+	printf '%s -p%s\n' "$name" "$strip" >> "$quilt_patches/series"
+fi
+
+patch "${patch_args[@]}" --backup --prefix "$quilt_pc/$name/" -i "$patch_file"
+status=$?
+
+if [ "$status" -eq 0 ]; then
+	: > "$quilt_pc/$name/.timestamp"
+	mkdir -p "$quilt_pc"
+	[ -e "$quilt_pc/.version" ] || echo 2 > "$quilt_pc/.version"
+	[ -e "$quilt_pc/.quilt_patches" ] || echo "$quilt_patches" > "$quilt_pc/.quilt_patches"
+	[ -e "$quilt_pc/.quilt_series" ] || echo series > "$quilt_pc/.quilt_series"
+	printf '%s\n' "$name" >> "$quilt_pc/applied-patches"
+	if [ -n "$backup_prefix" ] && [ -d "$quilt_pc/$name" ]; then
+		(cd "$quilt_pc/$name" && find . -type f ! -name .timestamp -print) |
+		while IFS= read -r file; do
+			file=${file#./}
+			mkdir -p "$backup_prefix/$(dirname "$file")"
+			ln "$quilt_pc/$name/$file" "$backup_prefix/$file" 2>/dev/null || cp -p "$quilt_pc/$name/$file" "$backup_prefix/$file"
+		done
+	elif [ -z "$silent" ] && [ -d "$quilt_pc/$name" ]; then
+		(cd "$quilt_pc/$name" && find . -type f ! -name .timestamp -print) |
+		while IFS= read -r file; do
+			file=${file#./}
+			if [ "$quilt_pc/$name/$file" -ef "$file.orig" ]; then
+				:
+			else
+				ln "$quilt_pc/$name/$file" "$file.orig" 2>/dev/null || cp -p "$quilt_pc/$name/$file" "$file.orig"
+			fi
+		done
+	fi
+fi
+
+exit "$status"

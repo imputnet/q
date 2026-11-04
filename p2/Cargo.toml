@@ -1,0 +1,11 @@
+[package]
+name = "p2"
+version = "0.1.0"
+edition = "2024"
+description = "A Rust implementation of GNU patch-compatible patch application"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+filetime = "0.2"
+libc = "0.2"
+rayon = "1.10"
