@@ -98,25 +98,29 @@ impl DateTime {
     }
 
     fn local_seconds(&self) -> Option<i64> {
-        let mut time = libc::tm {
-            tm_sec: i32::try_from(self.second).ok()?,
-            tm_min: i32::try_from(self.minute).ok()?,
-            tm_hour: i32::try_from(self.hour).ok()?,
-            tm_mday: i32::try_from(self.day).ok()?,
-            tm_mon: i32::try_from(self.month).ok()? - 1,
-            tm_year: self.year.checked_sub(1900)?,
-            tm_wday: 0,
-            tm_yday: 0,
-            tm_isdst: -1,
-            #[cfg(any(target_os = "android", target_os = "emscripten", target_os = "linux"))]
-            tm_gmtoff: 0,
-            #[cfg(any(target_os = "android", target_os = "emscripten", target_os = "linux"))]
-            tm_zone: std::ptr::null(),
-        };
+        // SAFETY: `tm` is plain integers plus, on some platforms, a zone
+        // pointer, for all of which zero is a valid value.
+        let mut time: libc::tm = unsafe { std::mem::zeroed() };
+        time.tm_sec = i32::try_from(self.second).ok()?;
+        time.tm_min = i32::try_from(self.minute).ok()?;
+        time.tm_hour = i32::try_from(self.hour).ok()?;
+        time.tm_mday = i32::try_from(self.day).ok()?;
+        time.tm_mon = i32::try_from(self.month).ok()? - 1;
+        time.tm_year = self.year.checked_sub(1900)?;
+        time.tm_isdst = -1;
         // SAFETY: `time` is a fully initialized `tm` that mktime may normalize in place.
-        let seconds = unsafe { libc::mktime(&mut time) };
+        let seconds = unsafe { mktime(&mut time) };
         (seconds != -1).then_some(seconds as i64)
     }
+}
+
+#[cfg(unix)]
+use libc::mktime;
+
+#[cfg(windows)]
+unsafe extern "C" {
+    #[link_name = "_mktime64"]
+    fn mktime(time: *mut libc::tm) -> i64;
 }
 
 /// Parses a `YYYY-MM-DD HH:MM:SS[.fraction][ zone]` header label.
