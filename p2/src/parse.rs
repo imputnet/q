@@ -505,7 +505,8 @@ fn parse_unified_hunks(lines: &[&str], mut i: usize) -> Result<(Vec<Hunk>, usize
                 break;
             }
             i += 1;
-            if line.starts_with("\\ No newline at end of file") {
+            if line.starts_with('\\') {
+                drop_last_newline(&mut hunk);
                 continue;
             }
             // Some tools drop the leading space from empty context lines.
@@ -540,9 +541,25 @@ fn parse_unified_hunks(lines: &[&str], mut i: usize) -> Result<(Vec<Hunk>, usize
                 }
             }
         }
+        // The marker for the hunk's last line comes after its counts are met.
+        if lines.get(i).is_some_and(|line| line.starts_with('\\')) {
+            drop_last_newline(&mut hunk);
+            i += 1;
+        }
         hunks.push(hunk);
     }
     Ok((hunks, i))
+}
+
+/// Applies a `\ No newline at end of file` marker, which refers to the line
+/// before it.
+fn drop_last_newline(hunk: &mut Hunk) {
+    if let Some(HunkLine::Context(text) | HunkLine::Remove(text) | HunkLine::Add(text)) =
+        hunk.lines.last_mut()
+        && text.ends_with('\n')
+    {
+        text.pop();
+    }
 }
 
 fn parse_git_header(line: &str, line_number: usize) -> Result<(String, String)> {

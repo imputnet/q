@@ -147,9 +147,8 @@ pub(crate) fn remove_empty_parent_dirs(root: &Path, path: &Path) -> Result<()> {
 #[cfg(unix)]
 pub(crate) fn read_symlink_text(path: &Path) -> Result<String> {
     let target = fs::read_link(path).map_err(io_error(path))?;
-    let mut line = target.to_string_lossy().into_owned();
-    line.push('\n');
-    Ok(line)
+    // A link target is one line without a newline, as git diffs show it.
+    Ok(target.to_string_lossy().into_owned())
 }
 
 #[cfg(not(unix))]

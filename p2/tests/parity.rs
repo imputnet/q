@@ -2107,3 +2107,26 @@ fn header_without_hunks_is_skipped_like_gnu_patch() {
         &["f", "g"],
     );
 }
+
+#[test]
+fn no_newline_markers_apply_like_gnu_patch() {
+    let marker = "\\ No newline at end of file\n";
+    assert_matches_gnu_patch(
+        &[("f", "a")],
+        &format!("--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n{marker}+b\n"),
+        &["-p1"],
+        &["f"],
+    );
+    assert_matches_gnu_patch(
+        &[("f", "a\n")],
+        &format!("--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n{marker}"),
+        &["-p1"],
+        &["f"],
+    );
+    assert_matches_gnu_patch(
+        &[("f", "x\na")],
+        &format!("--- a/f\n+++ b/f\n@@ -1,2 +1,2 @@\n x\n-a\n{marker}+b\n"),
+        &["-p1"],
+        &["f"],
+    );
+}
