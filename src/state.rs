@@ -66,7 +66,7 @@ impl State {
             .map(|_| {
                 let mut prefix: PathBuf = subdir.components().map(|_| "..").collect();
                 prefix.push(&patches_name);
-                format!("{}/", prefix.display())
+                format!("{}/", with_slashes(prefix).display())
             });
 
         Ok(Self {
@@ -318,12 +318,14 @@ impl State {
         } else {
             self.subdir.join(path)
         };
-        rel.components()
-            .filter_map(|component| match component {
-                Component::CurDir => None,
-                other => Some(other.as_os_str().to_owned()),
-            })
-            .collect()
+        with_slashes(
+            rel.components()
+                .filter_map(|component| match component {
+                    Component::CurDir => None,
+                    other => Some(other.as_os_str().to_owned()),
+                })
+                .collect(),
+        )
     }
 
     pub fn tracked_files(&self, patch: &str) -> Result<Vec<PathBuf>> {
@@ -354,12 +356,28 @@ impl State {
                 }
             };
             if entry.file_type().is_file() && entry.file_name() != ".timestamp" {
-                files.push(entry.path().strip_prefix(&dir)?.to_path_buf());
+                files.push(with_slashes(entry.path().strip_prefix(&dir)?.to_path_buf()));
             }
         }
         sort_tracked(&mut files);
         Ok(files)
     }
+}
+
+/// A path relative to the quilt root as quilt writes it in patches and
+/// listings, with `/` even on Windows, where `Path` joins components with `\`
+/// but accepts `/` as well.
+#[cfg(windows)]
+pub(crate) fn with_slashes(path: PathBuf) -> PathBuf {
+    match path.to_str() {
+        Some(text) if !path.is_absolute() => PathBuf::from(text.replace('\\', "/")),
+        _ => path,
+    }
+}
+
+#[cfg(not(windows))]
+pub(crate) fn with_slashes(path: PathBuf) -> PathBuf {
+    path
 }
 
 /// quilt's order for a patch's files: shallower paths first, then by name.
@@ -417,6 +435,10 @@ fn write_if_missing(path: PathBuf, value: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::parse_series_line;
+    #[cfg(windows)]
+    use super::with_slashes;
+    #[cfg(windows)]
+    use std::path::PathBuf;
 
     #[test]
     fn parses_series_lines_with_options_and_comments() {
@@ -429,5 +451,14 @@ mod tests {
     fn ignores_comments_and_blank_lines() {
         assert!(parse_series_line("# patch.diff").is_none());
         assert!(parse_series_line("   ").is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn writes_relative_paths_with_slashes() {
+        let path = with_slashes(PathBuf::from(r"chrome\app\main.cc"));
+        assert_eq!(path.to_str(), Some("chrome/app/main.cc"));
+        let absolute = with_slashes(PathBuf::from(r"C:\src\main.cc"));
+        assert_eq!(absolute.to_str(), Some(r"C:\src\main.cc"));
     }
 }
