@@ -2,7 +2,7 @@ use crate::cli::usage;
 use crate::patchfile::patch_header;
 use crate::state::{PatchEntry, State};
 use anyhow::{Context, Result, bail};
-use chrono::{DateTime, Local};
+use jiff::Timestamp;
 use lexopt::prelude::*;
 use std::collections::HashMap;
 use std::env;
@@ -341,10 +341,10 @@ fn write_generated_mail_headers(out: &mut String, sender: &str) {
         domain
     ));
     out.push_str(&format!("User-Agent: quilt/{}\n", env!("Q_VERSION")));
-    let now: DateTime<Local> = Local::now();
+    let now: Timestamp = Timestamp::now();
     out.push_str(&format!(
         "Date: {}\n",
-        now.format("%a, %d %b %Y %H:%M:%S %z")
+        now.strftime("%a, %d %b %Y %H:%M:%S %z")
     ));
 }
 

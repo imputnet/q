@@ -1,11 +1,12 @@
 use std::fs;
 use std::path::Path;
+use std::time::{Duration, SystemTime};
+
+use jiff::Timestamp;
 
 mod support;
 
 use support::*;
-
-use filetime::{FileTime, set_file_mtime};
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -1870,9 +1871,11 @@ fn sets_utc_timestamp_from_patch_header_like_gnu_patch() {
     fs::create_dir(&p2_dir).unwrap();
     fs::write(gnu_dir.join("f"), "one\n").unwrap();
     fs::write(p2_dir.join("f"), "one\n").unwrap();
-    let timestamp1 = FileTime::from_unix_time(1_236_902_400, 0);
-    set_file_mtime(gnu_dir.join("f"), timestamp1).unwrap();
-    set_file_mtime(p2_dir.join("f"), timestamp1).unwrap();
+
+    let timestamp1 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_236_902_400);
+    let filetimes1 = fs::FileTimes::new().set_modified(timestamp1);
+    fs::set_times(gnu_dir.join("f"), filetimes1).unwrap();
+    fs::set_times(p2_dir.join("f"), filetimes1).unwrap();
 
     let p2 = patch_under_test();
     let reference = reference_patch();
@@ -1895,8 +1898,8 @@ fn sets_utc_timestamp_from_patch_header_like_gnu_patch() {
         fs::read(p2_dir.join("f")).unwrap()
     );
     assert_eq!(
-        FileTime::from_last_modification_time(&fs::metadata(gnu_dir.join("f")).unwrap()).seconds(),
-        FileTime::from_last_modification_time(&fs::metadata(p2_dir.join("f")).unwrap()).seconds()
+        fs::metadata(gnu_dir.join("f")).unwrap().modified().unwrap(),
+        fs::metadata(p2_dir.join("f")).unwrap().modified().unwrap()
     );
 
     fs::remove_dir_all(root).unwrap();
@@ -1912,9 +1915,10 @@ fn sets_fractional_timestamp_with_timezone_like_gnu_patch() {
     fs::create_dir(&p2_dir).unwrap();
     fs::write(gnu_dir.join("f"), "one\n").unwrap();
     fs::write(p2_dir.join("f"), "one\n").unwrap();
-    let timestamp1 = FileTime::from_unix_time(1_236_902_400, 0);
-    set_file_mtime(gnu_dir.join("f"), timestamp1).unwrap();
-    set_file_mtime(p2_dir.join("f"), timestamp1).unwrap();
+    let timestamp1 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_236_902_400);
+    let filetimes1 = fs::FileTimes::new().set_modified(timestamp1);
+    fs::set_times(gnu_dir.join("f"), filetimes1).unwrap();
+    fs::set_times(p2_dir.join("f"), filetimes1).unwrap();
 
     let p2 = patch_under_test();
     let reference = reference_patch();
@@ -1927,10 +1931,20 @@ fn sets_fractional_timestamp_with_timezone_like_gnu_patch() {
         String::from_utf8_lossy(&gnu.stderr),
         String::from_utf8_lossy(&ours.stderr)
     );
-    let gnu_time = FileTime::from_last_modification_time(&fs::metadata(gnu_dir.join("f")).unwrap());
-    let p2_time = FileTime::from_last_modification_time(&fs::metadata(p2_dir.join("f")).unwrap());
-    assert_eq!(gnu_time.seconds(), p2_time.seconds());
-    assert_eq!(gnu_time.nanoseconds(), p2_time.nanoseconds());
+    let gnu_time: Timestamp = fs::metadata(gnu_dir.join("f"))
+        .unwrap()
+        .modified()
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let p2_time: Timestamp = fs::metadata(p2_dir.join("f"))
+        .unwrap()
+        .modified()
+        .unwrap()
+        .try_into()
+        .unwrap();
+    assert_eq!(gnu_time.as_second(), p2_time.as_second());
+    assert_eq!(gnu_time.subsec_nanosecond(), p2_time.subsec_nanosecond());
 
     fs::remove_dir_all(root).unwrap();
 }
@@ -1948,9 +1962,10 @@ fn sets_timestamp_with_named_zero_timezone_like_gnu_patch() {
         fs::create_dir(&p2_dir).unwrap();
         fs::write(gnu_dir.join("f"), "one\n").unwrap();
         fs::write(p2_dir.join("f"), "one\n").unwrap();
-        let timestamp1 = FileTime::from_unix_time(1_236_902_400, 0);
-        set_file_mtime(gnu_dir.join("f"), timestamp1).unwrap();
-        set_file_mtime(p2_dir.join("f"), timestamp1).unwrap();
+        let timestamp1 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_236_902_400);
+        let filetimes1 = fs::FileTimes::new().set_modified(timestamp1);
+        fs::set_times(gnu_dir.join("f"), filetimes1).unwrap();
+        fs::set_times(p2_dir.join("f"), filetimes1).unwrap();
 
         let p2 = patch_under_test();
         let reference = reference_patch();
@@ -1963,12 +1978,20 @@ fn sets_timestamp_with_named_zero_timezone_like_gnu_patch() {
             String::from_utf8_lossy(&gnu.stderr),
             String::from_utf8_lossy(&ours.stderr)
         );
-        let gnu_time =
-            FileTime::from_last_modification_time(&fs::metadata(gnu_dir.join("f")).unwrap());
-        let p2_time =
-            FileTime::from_last_modification_time(&fs::metadata(p2_dir.join("f")).unwrap());
-        assert_eq!(gnu_time.seconds(), p2_time.seconds(), "zone {zone}");
-        assert_eq!(gnu_time.seconds(), 1_236_988_800, "zone {zone}");
+        let gnu_time: Timestamp = fs::metadata(gnu_dir.join("f"))
+            .unwrap()
+            .modified()
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let p2_time: Timestamp = fs::metadata(p2_dir.join("f"))
+            .unwrap()
+            .modified()
+            .unwrap()
+            .try_into()
+            .unwrap();
+        assert_eq!(gnu_time.as_second(), p2_time.as_second(), "zone {zone}");
+        assert_eq!(gnu_time.as_second(), 1_236_988_800, "zone {zone}");
 
         fs::remove_dir_all(root).unwrap();
     }
@@ -1985,9 +2008,10 @@ fn short_set_utc_option_sets_timestamp_like_gnu_patch() {
     fs::create_dir(&p2_dir).unwrap();
     fs::write(gnu_dir.join("f"), "one\n").unwrap();
     fs::write(p2_dir.join("f"), "one\n").unwrap();
-    let timestamp1 = FileTime::from_unix_time(1_236_902_400, 0);
-    set_file_mtime(gnu_dir.join("f"), timestamp1).unwrap();
-    set_file_mtime(p2_dir.join("f"), timestamp1).unwrap();
+    let timestamp1 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_236_902_400);
+    let filetimes1 = fs::FileTimes::new().set_modified(timestamp1);
+    fs::set_times(gnu_dir.join("f"), filetimes1).unwrap();
+    fs::set_times(p2_dir.join("f"), filetimes1).unwrap();
 
     let p2 = patch_under_test();
     let reference = reference_patch();
@@ -2000,9 +2024,19 @@ fn short_set_utc_option_sets_timestamp_like_gnu_patch() {
         String::from_utf8_lossy(&gnu.stderr),
         String::from_utf8_lossy(&ours.stderr)
     );
-    let gnu_time = FileTime::from_last_modification_time(&fs::metadata(gnu_dir.join("f")).unwrap());
-    let p2_time = FileTime::from_last_modification_time(&fs::metadata(p2_dir.join("f")).unwrap());
-    assert_eq!(gnu_time.seconds(), p2_time.seconds());
+    let gnu_time: Timestamp = fs::metadata(gnu_dir.join("f"))
+        .unwrap()
+        .modified()
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let p2_time: Timestamp = fs::metadata(p2_dir.join("f"))
+        .unwrap()
+        .modified()
+        .unwrap()
+        .try_into()
+        .unwrap();
+    assert_eq!(gnu_time.as_second(), p2_time.as_second());
 
     fs::remove_dir_all(root).unwrap();
 }
@@ -2018,9 +2052,10 @@ fn set_time_uses_local_timezone_like_gnu_patch() {
     fs::create_dir(&p2_dir).unwrap();
     fs::write(gnu_dir.join("f"), "one\n").unwrap();
     fs::write(p2_dir.join("f"), "one\n").unwrap();
-    let source_time = FileTime::from_unix_time(1_236_920_400, 0);
-    set_file_mtime(gnu_dir.join("f"), source_time).unwrap();
-    set_file_mtime(p2_dir.join("f"), source_time).unwrap();
+    let source_time = SystemTime::UNIX_EPOCH + Duration::from_secs(1_236_920_400);
+    let source_file_times = fs::FileTimes::new().set_modified(source_time);
+    fs::set_times(gnu_dir.join("f"), source_file_times).unwrap();
+    fs::set_times(p2_dir.join("f"), source_file_times).unwrap();
 
     let p2 = patch_under_test();
     let reference = reference_patch();
@@ -2038,6 +2073,7 @@ fn set_time_uses_local_timezone_like_gnu_patch() {
         &["-p1", "--set-time"],
         &[("TZ", "EST5")],
     );
+
     assert_eq!(
         gnu.status.success(),
         ours.status.success(),
@@ -2045,10 +2081,20 @@ fn set_time_uses_local_timezone_like_gnu_patch() {
         String::from_utf8_lossy(&gnu.stderr),
         String::from_utf8_lossy(&ours.stderr)
     );
-    let gnu_time = FileTime::from_last_modification_time(&fs::metadata(gnu_dir.join("f")).unwrap());
-    let p2_time = FileTime::from_last_modification_time(&fs::metadata(p2_dir.join("f")).unwrap());
-    assert_eq!(gnu_time.seconds(), p2_time.seconds());
-    assert_eq!(gnu_time.seconds(), 1_237_006_800);
+    let gnu_time: Timestamp = fs::metadata(gnu_dir.join("f"))
+        .unwrap()
+        .modified()
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let p2_time: Timestamp = fs::metadata(p2_dir.join("f"))
+        .unwrap()
+        .modified()
+        .unwrap()
+        .try_into()
+        .unwrap();
+    assert_eq!(gnu_time.as_second(), p2_time.as_second());
+    assert_eq!(gnu_time.as_second(), 1_237_006_800);
 
     fs::remove_dir_all(root).unwrap();
 }
