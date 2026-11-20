@@ -13,6 +13,7 @@ fn hidden_completion_suggests_commands() {
 }
 
 #[test]
+#[cfg(feature = "completion-scripts")]
 fn completion_glue_falls_back_to_files() {
     let dir = tempdir().unwrap();
 
@@ -37,6 +38,7 @@ fn completion_glue_falls_back_to_files() {
 }
 
 #[test]
+#[cfg(feature = "completion-scripts")]
 fn zsh_completion_initializes_completion_system() {
     let dir = tempdir().unwrap();
 
@@ -50,6 +52,7 @@ fn zsh_completion_initializes_completion_system() {
 }
 
 #[test]
+#[cfg(feature = "completion-scripts")]
 fn zsh_completion_avoids_nested_command_substitution_expansion() {
     let dir = tempdir().unwrap();
 

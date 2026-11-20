@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 
+[features]
+default = ["completion-scripts"]
+# Enables the `c completion [shell]` command. Distributions shipping the files directly can disable this to get a smaller binary.
+completion-scripts = []
+
 [[bin]]
 name = "quilt"
 path = "src/bin/quilt.rs"

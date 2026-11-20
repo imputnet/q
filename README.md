@@ -94,7 +94,7 @@ skips the amend.
 ### Shell completion
 
 ```sh
-source <(q completion bash)    # or zsh
+source <(q completion bash)    # or zsh, fish
 q completion fish | source
 ```
 
@@ -102,6 +102,12 @@ Completion covers command names and patch names. A patch can also be completed
 by its basename when that is unique, so `platform/fix-build.patch` completes
 from `fix-build`. Commands accept these basenames as well, and `q new`
 completes existing patch directories.
+
+> [!NOTE]
+> Distributions may opt to ship the shell files (available in `src/completion`)
+> separately to install them in the shells with no setup required.
+> In that case, the `q completion` command should then be disabled via the
+> `completion-scripts` Cargo feature flag to save on binary size.
 
 ### Other differences
 

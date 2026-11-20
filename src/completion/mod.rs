@@ -8,73 +8,21 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
+#[cfg(feature = "completion-scripts")]
 pub(crate) fn cmd_completion(args: Vec<OsString>) -> Result<()> {
     let shell = args
         .first()
         .map(|arg| arg.to_string_lossy())
         .unwrap_or_default();
-    match shell.as_ref() {
-        "bash" => {
-            let script = r#"_q_complete() {
-    local cur
-    cur="${COMP_WORDS[COMP_CWORD]}"
-    COMPREPLY=( $(COMP_CWORD="$COMP_CWORD" q __complete "${COMP_WORDS[@]:1}" -- "$cur") )
-    local reply
-    for reply in "${COMPREPLY[@]}"; do
-        if [[ "$reply" == */ ]]; then
-            compopt -o nospace 2>/dev/null || true
-            break
-        fi
-    done
-}
-complete -o default -F _q_complete q quilt
-"#;
-            print!("{script}");
-        }
-        "zsh" => {
-            let script = r#"_q_complete() {
-    local -a completions
-    local completion
-    local no_space
-    completions=()
-    no_space=0
-    while IFS= read -r completion; do
-        completions+=("$completion")
-        if [[ "$completion" == */ ]]; then
-            no_space=1
-        fi
-    done < <(q __complete "${words[@]}" -- "$words[CURRENT]")
-    if (( ${#completions[@]} )); then
-        if (( no_space )); then
-            compadd -S '' -- "${completions[@]}"
-        else
-            compadd -- "${completions[@]}"
-        fi
-    else
-        _files
-    fi
-}
-if ! whence -w compdef >/dev/null; then
-    autoload -Uz compinit
-    compinit
-fi
-compdef _q_complete q quilt
-"#;
-            print!("{script}");
-        }
-        "fish" => {
-            let script = r#"function __q_complete
-    set -l tokens (commandline -opc)
-    set -l cur (commandline -ct)
-    q __complete $tokens -- $cur
-end
-complete -c q -a '(__q_complete)'
-complete -c quilt -a '(__q_complete)'
-"#;
-            print!("{script}");
-        }
+
+    let script = match shell.as_ref() {
+        "bash" => include_str!("completion.bash"),
+        "zsh" => include_str!("completion.zsh"),
+        "fish" => include_str!("completion.fish"),
         _ => bail!("Usage: quilt completion {{bash|zsh|fish}}"),
-    }
+    };
+
+    print!("{script}");
     Ok(())
 }
 
