@@ -262,6 +262,7 @@ pub fn main() -> ! {
 fn run() -> Result<()> {
     let mut args: Vec<OsString> = env::args_os().skip(1).collect();
     match args.first().and_then(|arg| arg.to_str()) {
+        #[cfg(feature = "completion-scripts")]
         Some("completion") => return completion::cmd_completion(args.split_off(1)),
         Some("__complete") => return completion::cmd_complete(args.split_off(1)),
         _ => {}
@@ -271,7 +272,7 @@ fn run() -> Result<()> {
         return print_usage();
     }
     if args.len() == 1 && args[0] == "--version" {
-        println!("{}", env!("Q_VERSION"));
+        println!("q (quilt-compatible) {}", env!("Q_VERSION"));
         return Ok(());
     }
 
