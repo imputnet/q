@@ -114,14 +114,16 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Create release
+      - name: Write release notes
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ needs.check.outputs.tag }}
           SHA: ${{ needs.check.outputs.sha }}
-        run: |
-          set -euo pipefail
-          gh release create "$TAG" dist/* --draft --target "$SHA" --title "$TAG" \
-            --notes "Built from $SHA."
-          gh release edit "$TAG" --draft=false --latest
+        run: echo "Built from $SHA." > "$RUNNER_TEMP/notes.md"
+
+      - name: Create release
+        uses: imputnet/immutable-release@v1
+        with:
+          tag: ${{ needs.check.outputs.tag }}
+          target: ${{ needs.check.outputs.sha }}
+          notes-file: ${{ runner.temp }}/notes.md
+          files: dist/*
+          latest: true
