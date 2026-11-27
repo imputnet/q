@@ -2,7 +2,7 @@
 //! and transparent (de)compression.
 
 use crate::fsutil::{create_parent_dir, is_symlink};
-use crate::state::PatchEntry;
+use crate::state::{PatchEntry, with_slashes};
 use anyhow::{Result, bail};
 use std::collections::HashSet;
 use std::fs;
@@ -97,7 +97,9 @@ pub(crate) fn filenames_in_text_order(text: &str, strip: usize) -> Vec<PathBuf> 
         if strip == 0 && name.ends_with(".orig") {
             name.truncate(name.len() - ".orig".len());
         }
-        let path: PathBuf = Path::new(&name).components().skip(strip).collect();
+        // Collecting the components joins them with `\` on Windows, and
+        // refresh writes these names back into the patch.
+        let path = with_slashes(Path::new(&name).components().skip(strip).collect());
         if !path.as_os_str().is_empty() && seen.insert(path.clone()) {
             files.push(path);
         }
@@ -376,6 +378,22 @@ mod tests {
             filenames_in_text_order(text, 1),
             [PathBuf::from("src/lib.rs")]
         );
+    }
+
+    /// Compares text, since `Path` equality ignores the separator on Windows.
+    #[test]
+    fn extracts_filenames_with_slashes() {
+        let text = "--- a/src/dir/lib.rs\n+++ b/src/dir/lib.rs\n@@ -1 +1 @@\n-a\n+b\n";
+        let files = filenames_in_text_order(text, 1);
+        assert_eq!(files[0].to_str(), Some("src/dir/lib.rs"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn extracts_backslash_filenames_with_slashes() {
+        let text = "--- a/src\\dir\\lib.rs\n+++ b/src\\dir\\lib.rs\n@@ -1 +1 @@\n-a\n+b\n";
+        let files = filenames_in_text_order(text, 1);
+        assert_eq!(files[0].to_str(), Some("src/dir/lib.rs"));
     }
 
     #[test]

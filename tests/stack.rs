@@ -781,6 +781,40 @@ fn refresh_records_strip_level_in_series() {
     q(dir.path()).args(["push"]).assert().success();
 }
 
+/// Once a patch names a file, refresh and `files` take its name from the
+/// patch, which must keep `/` on Windows too.
+#[test]
+fn refresh_keeps_slashes_in_names_from_the_old_patch() {
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("dir/sub")).unwrap();
+    fs::write(dir.path().join("dir/sub/file"), "one\n").unwrap();
+    q(dir.path()).args(["new", "p.diff"]).assert().success();
+    q(dir.path())
+        .args(["add", "dir/sub/file"])
+        .assert()
+        .success();
+    for text in ["two\n", "three\n"] {
+        fs::write(dir.path().join("dir/sub/file"), text).unwrap();
+        q(dir.path())
+            .args(["refresh", "-p", "ab", "--no-timestamps"])
+            .assert()
+            .success();
+    }
+    let patch = fs::read_to_string(dir.path().join("patches/p.diff")).unwrap();
+    assert!(patch.starts_with("Index: b/dir/sub/file\n"), "{patch}");
+    assert!(
+        patch.contains("\n--- a/dir/sub/file\n+++ b/dir/sub/file\n"),
+        "{patch}"
+    );
+
+    q(dir.path()).args(["pop"]).assert().success();
+    q(dir.path())
+        .args(["files", "p.diff"])
+        .assert()
+        .success()
+        .stdout("dir/sub/file\n");
+}
+
 #[test]
 fn import_rejects_paths_without_a_file_name() {
     let dir = tempdir().unwrap();

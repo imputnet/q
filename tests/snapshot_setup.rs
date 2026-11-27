@@ -57,6 +57,29 @@ fn snapshot_diff_only_reports_files_in_applied_patches() {
 }
 
 #[test]
+fn snapshot_diff_names_files_with_slashes() {
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("dir/sub")).unwrap();
+    fs::write(dir.path().join("dir/sub/file"), "one\n").unwrap();
+    q(dir.path()).args(["new", "p.diff"]).assert().success();
+    q(dir.path())
+        .args(["add", "dir/sub/file"])
+        .assert()
+        .success();
+    q(dir.path()).args(["snapshot"]).assert().success();
+    fs::write(dir.path().join("dir/sub/file"), "two\n").unwrap();
+
+    let root = dir.path().file_name().unwrap().to_string_lossy();
+    q(dir.path())
+        .args(["diff", "--snapshot", "--no-timestamps"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "--- {root}.orig/dir/sub/file\n+++ {root}/dir/sub/file\n"
+        )));
+}
+
+#[test]
 fn setup_honors_series_sourcedir_for_plain_tar() {
     let dir = tempdir().unwrap();
     fs::create_dir(dir.path().join("srcpkg")).unwrap();
