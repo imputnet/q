@@ -2,8 +2,8 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
-use filetime::set_file_mtime;
 use rayon::prelude::*;
 
 use crate::fs_util::{
@@ -29,7 +29,7 @@ use crate::timestamp::{
 use crate::{
     ApplyOptions, ApplyReport, FilePatch, FileReport, GitOperation, Hunk, HunkLine, HunkReport,
     HunkStatus, MergeMode, PatchFormat, PatchSet, ReadOnlyBehavior, ReportOperation, Result,
-    io_error,
+    io_error, io_error_other,
 };
 
 /// Patch sets touching at least this many distinct files apply files in parallel.
@@ -500,7 +500,9 @@ fn apply_file_patch(
             && !time_mismatch
             && let Some(timestamp) = target_timestamp
         {
-            set_file_mtime(&full_path, timestamp).map_err(io_error(&full_path))?;
+            let mtime: SystemTime = timestamp.try_into().map_err(io_error_other(&full_path))?;
+            fs::set_times(&full_path, fs::FileTimes::new().set_modified(mtime))
+                .map_err(io_error(&full_path))?;
         }
     }
 

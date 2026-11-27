@@ -5,9 +5,9 @@ use std::fs;
 use std::path::Path;
 use std::str::FromStr;
 
-use filetime::FileTime;
+use jiff::Timestamp;
 
-use crate::{ApplyOptions, FilePatch, Result, io_error};
+use crate::{ApplyOptions, FilePatch, Result, io_error, io_error_other};
 
 #[derive(Clone, Copy)]
 pub(crate) enum TimestampMode {
@@ -61,10 +61,10 @@ pub(crate) fn has_deletion_timestamp(patch: &FilePatch, options: &ApplyOptions) 
         .and_then(|label| parse_header_timestamp(label, mode.unwrap_or(TimestampMode::Local)));
     timestamp.is_some_and(|timestamp| {
         if mode.is_some() {
-            timestamp.seconds() == 0
+            timestamp.as_second() == 0
         } else {
             // GNU patch allows for an epoch written in a different local timezone.
-            let time = (timestamp.seconds(), timestamp.nanoseconds());
+            let time = (timestamp.as_second(), timestamp.subsec_nanosecond());
             time > (-25 * 3600, 0) && time < (26 * 3600, 0)
         }
     })
@@ -74,7 +74,7 @@ pub(crate) fn source_timestamp(
     patch: &FilePatch,
     reverse: bool,
     mode: Option<TimestampMode>,
-) -> Option<FileTime> {
+) -> Option<Timestamp> {
     parse_header_timestamp(source_label(patch, reverse)?, mode?)
 }
 
@@ -82,21 +82,23 @@ pub(crate) fn target_timestamp(
     patch: &FilePatch,
     reverse: bool,
     mode: Option<TimestampMode>,
-) -> Option<FileTime> {
+) -> Option<Timestamp> {
     parse_header_timestamp(target_label(patch, reverse)?, mode?)
 }
 
 pub(crate) fn source_timestamp_matches(
     path: &Path,
     existed: bool,
-    timestamp: Option<FileTime>,
+    timestamp: Option<Timestamp>,
 ) -> Result<bool> {
     let Some(timestamp) = timestamp.filter(|_| existed) else {
         return Ok(true);
     };
     let metadata = fs::metadata(path).map_err(io_error(path))?;
-    let actual = FileTime::from_last_modification_time(&metadata);
-    Ok(actual.seconds() == timestamp.seconds() && actual.nanoseconds() == timestamp.nanoseconds())
+    let mtime_sys = metadata.modified().map_err(io_error(path))?;
+    let mtime: Timestamp = mtime_sys.try_into().map_err(io_error_other(path))?;
+
+    Ok(mtime == timestamp)
 }
 
 struct DateTime {
@@ -144,7 +146,7 @@ unsafe extern "C" {
 }
 
 /// Parses a `YYYY-MM-DD HH:MM:SS[.fraction][ zone]` header label.
-pub(crate) fn parse_header_timestamp(label: &str, mode: TimestampMode) -> Option<FileTime> {
+pub(crate) fn parse_header_timestamp(label: &str, mode: TimestampMode) -> Option<Timestamp> {
     let timestamp = label.trim_start();
     let datetime = timestamp.get(..19)?;
     let bytes = datetime.as_bytes();
@@ -174,15 +176,16 @@ pub(crate) fn parse_header_timestamp(label: &str, mode: TimestampMode) -> Option
     }
     let (nanoseconds, timezone_offset) = parse_timestamp_suffix(&timestamp[19..])?;
     let seconds = match (timezone_offset, mode) {
-        (Some(offset), _) => datetime.utc_seconds()?.checked_sub(offset)?,
+        (Some(offset), _) => datetime.utc_seconds()?.checked_sub(offset as i64)?,
         (None, TimestampMode::Utc) => datetime.utc_seconds()?,
         (None, TimestampMode::Local) => datetime.local_seconds()?,
     };
-    Some(FileTime::from_unix_time(seconds, nanoseconds))
+
+    Some(Timestamp::constant(seconds, nanoseconds))
 }
 
 /// Parses the optional `.fraction` and timezone that follow the seconds.
-fn parse_timestamp_suffix(suffix: &str) -> Option<(u32, Option<i64>)> {
+fn parse_timestamp_suffix(suffix: &str) -> Option<(i32, Option<i32>)> {
     let mut rest = suffix;
     let mut nanoseconds = 0;
     if let Some(fraction) = rest.strip_prefix('.') {
@@ -194,8 +197,8 @@ fn parse_timestamp_suffix(suffix: &str) -> Option<(u32, Option<i64>)> {
         nanoseconds = fraction
             .bytes()
             .take(parsed_digits)
-            .fold(0, |value, byte| value * 10 + u32::from(byte - b'0'))
-            * 10u32.pow((9 - parsed_digits) as u32);
+            .fold(0, |value, byte| value * 10 + i32::from(byte - b'0'))
+            * 10i32.pow((9 - parsed_digits) as u32);
         rest = &fraction[digit_count..];
     }
 
@@ -208,7 +211,7 @@ fn parse_timestamp_suffix(suffix: &str) -> Option<(u32, Option<i64>)> {
     Some((nanoseconds, timezone_offset))
 }
 
-fn parse_timezone_offset(value: &str) -> Option<i64> {
+fn parse_timezone_offset(value: &str) -> Option<i32> {
     if ["UTC", "GMT", "UT", "Z"]
         .iter()
         .any(|zone| value.eq_ignore_ascii_case(zone))
@@ -234,8 +237,8 @@ fn parse_timezone_offset(value: &str) -> Option<i64> {
     } else {
         return None;
     };
-    let hours: i64 = parse_digits(hours)?;
-    let minutes: i64 = parse_digits(minutes)?;
+    let hours: i32 = parse_digits(hours)?;
+    let minutes: i32 = parse_digits(minutes)?;
     if hours > 25 || minutes > 59 {
         return None;
     }
@@ -285,7 +288,7 @@ mod tests {
         let timestamp =
             parse_header_timestamp("2009-03-14 01:00:00.123456789 +0100", TimestampMode::Utc)
                 .unwrap();
-        assert_eq!(timestamp.seconds(), 1_236_988_800);
-        assert_eq!(timestamp.nanoseconds(), 123_456_789);
+        assert_eq!(timestamp.as_second(), 1_236_988_800);
+        assert_eq!(timestamp.subsec_nanosecond(), 123_456_789);
     }
 }

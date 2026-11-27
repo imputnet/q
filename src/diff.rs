@@ -3,7 +3,7 @@ use crate::config::*;
 use crate::patchfile::*;
 use crate::state::State;
 use anyhow::{Context, Result, bail};
-use chrono::{DateTime, Local};
+use jiff::Timestamp;
 use lexopt::ValueExt;
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
@@ -538,12 +538,11 @@ fn diff_label_with_timestamp(label: &str, path: &Path, no_timestamps: bool) -> S
         "1970-01-01 00:00:00.000000000 +0000".to_string()
     } else {
         fs::metadata(path)
-            .and_then(|metadata| metadata.modified())
-            .map(|modified| {
-                let datetime: DateTime<Local> = DateTime::from(modified);
-                datetime.format("%Y-%m-%d %H:%M:%S%.9f %z").to_string()
-            })
-            .unwrap_or_else(|_| "1970-01-01 00:00:00.000000000 +0000".to_string())
+            .ok()
+            .and_then(|metadata| metadata.modified().ok())
+            .and_then(|modified| Timestamp::try_from(modified).ok())
+            .map(|timestamp| timestamp.strftime("%Y-%m-%d %H:%M:%S%.9f %z").to_string())
+            .unwrap_or("1970-01-01 00:00:00.000000000 +0000".to_string())
     };
     format!("{label}\t{timestamp}")
 }

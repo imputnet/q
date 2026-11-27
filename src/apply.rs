@@ -11,6 +11,7 @@ use std::collections::HashSet;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::SystemTime;
 use tempfile::{NamedTempFile, TempDir, tempdir};
 
 pub struct ApplyResult {
@@ -519,7 +520,7 @@ fn restore_file(
     }
     if consume && fs::rename(&backup, &dest).is_ok() {
         if !has_other_hard_links(&metadata) {
-            filetime::set_file_mtime(&dest, filetime::FileTime::now())?;
+            fs::set_times(&dest, fs::FileTimes::new().set_modified(SystemTime::now()))?;
         }
         return Ok(());
     }

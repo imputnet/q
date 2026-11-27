@@ -67,9 +67,17 @@ pub(crate) fn has_other_hard_links(_metadata: &fs::Metadata) -> bool {
 pub(crate) fn copy_preserving_times(src: &Path, dst: &Path) -> Result<()> {
     fs::copy(src, dst)?;
     if let Ok(metadata) = fs::metadata(src) {
-        let mtime = filetime::FileTime::from_last_modification_time(&metadata);
-        let atime = filetime::FileTime::from_last_access_time(&metadata);
-        let _ = filetime::set_file_times(dst, atime, mtime);
+        let times = fs::FileTimes::new();
+
+        if let Ok(atime) = metadata.accessed() {
+            let _ = times.set_accessed(atime);
+        }
+
+        if let Ok(mtime) = metadata.modified() {
+            let _ = times.set_modified(mtime);
+        }
+
+        fs::set_times(&dst, times)?;
     }
     Ok(())
 }

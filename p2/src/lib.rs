@@ -385,6 +385,17 @@ pub(crate) fn io_error(path: &Path) -> impl FnOnce(std::io::Error) -> Error + '_
     }
 }
 
+/// Builds an `Error::Io` mapper for `path` and an arbitrary error (flagged as "Other" IO error), for use with `map_err`.
+pub(crate) fn io_error_other<E>(path: &Path) -> impl FnOnce(E) -> Error + '_
+where
+    E: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    move |source| Error::Io {
+        path: path.to_path_buf(),
+        source: std::io::Error::new(std::io::ErrorKind::Other, source),
+    }
+}
+
 /// The paths `apply_patch` would write to, in patch order.
 pub fn affected_paths(
     root: impl AsRef<Path>,

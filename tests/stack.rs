@@ -2,6 +2,7 @@ mod common;
 use common::*;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+use std::time::{Duration, SystemTime};
 
 #[test]
 fn create_refresh_pop_and_push_patch() {
@@ -1036,12 +1037,13 @@ fn pop_discards_backups() {
 fn pop_gives_restored_files_a_fresh_mtime() {
     let dir = applied_hello_patch();
     let hello = dir.path().join("hello.txt");
-    let old = filetime::FileTime::from_unix_time(1_000_000_000, 0);
+    let old = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000_000);
+    let old_ft = fs::FileTimes::new().set_modified(old);
     // Age the backup, as a clone or a long-lived backup would be.
-    filetime::set_file_mtime(dir.path().join(".pc/change.diff/hello.txt"), old).unwrap();
+    fs::set_times(dir.path().join(".pc/change.diff/hello.txt"), old_ft).unwrap();
     q(dir.path()).args(["pop"]).assert().success();
     assert_eq!(fs::read_to_string(&hello).unwrap(), "old\n");
-    let mtime = filetime::FileTime::from_last_modification_time(&fs::metadata(&hello).unwrap());
+    let mtime = fs::metadata(&hello).unwrap().modified().unwrap();
     assert!(mtime > old, "restored file kept the backup's old mtime");
 }
 

@@ -70,6 +70,7 @@ bench_pair() {
 	out=$tmp_results/$name.md
 	prepare="rm -rf '$run_dir' && cp -a '$template' '$run_dir'"
 	hyperfine \
+		--shell default \
 		--warmup "$warmup" \
 		--min-runs "$min_runs" \
 		--prepare "$prepare" \
