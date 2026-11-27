@@ -2,7 +2,7 @@ use crate::commands::*;
 use crate::config::*;
 use crate::diff::*;
 use crate::patchfile::strip_arg;
-use crate::state::State;
+use crate::state::{State, with_slashes};
 use anyhow::{Context, Result, bail};
 use lexopt::prelude::*;
 use std::collections::HashSet;
@@ -200,7 +200,9 @@ fn emit_snapshot_diff(state: &State) -> Result<()> {
     let mut files = HashSet::new();
     for entry in WalkDir::new(&snap).into_iter().filter_map(Result::ok) {
         if entry.file_type().is_file() {
-            files.insert(entry.path().strip_prefix(&snap)?.to_path_buf());
+            files.insert(with_slashes(
+                entry.path().strip_prefix(&snap)?.to_path_buf(),
+            ));
         }
     }
     for patch in state.applied()? {
